@@ -49,6 +49,7 @@ local tools = {
   'java-test',
   'delve', -- Go debugger
   'codelldb', -- Rust/C debugger
+  'tree-sitter-cli', -- builds treesitter parsers
 }
 
 -- Compose files are plain yaml by default; give them a compound filetype so

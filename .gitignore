@@ -1,6 +1,2 @@
-tags
-test.sh
-.luarc.json
-nvim
-
-spell/
+# Compiled spell files (rebuilt from the tracked .add word lists)
+spell/*.spl
