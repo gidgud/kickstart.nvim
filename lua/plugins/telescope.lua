@@ -21,6 +21,12 @@ return {
           i = { ['<c-enter>'] = 'to_fuzzy_refine' },
         },
       },
+      pickers = {
+        -- Show dotfiles (.env, .github/, ...); .git/ is still excluded above
+        find_files = { hidden = true },
+        live_grep = { additional_args = { '--hidden' } },
+        grep_string = { additional_args = { '--hidden' } },
+      },
       extensions = {
         ['ui-select'] = { require('telescope.themes').get_dropdown() },
       },

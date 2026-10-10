@@ -9,7 +9,10 @@ local servers = {
   },
   ts_ls = {},
   eslint = {},
-  html = {},
+  html = {
+    -- The server crashes validating embedded CSS when no css.lint settings are sent
+    settings = { css = { lint = { validProperties = {} } } },
+  },
   gopls = {},
 }
 

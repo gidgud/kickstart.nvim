@@ -33,7 +33,10 @@ end
 local runtimes = vim.tbl_values(runtimes_by_name)
 
 local root_dir = vim.fs.root(0, { '.git', 'mvnw', 'gradlew', 'pom.xml', 'build.gradle' }) or vim.fn.getcwd()
-local workspace_dir = vim.fn.stdpath 'data' .. '/jdtls-workspace/' .. vim.fn.fnamemodify(root_dir, ':t')
+-- Name the workspace after the project folder plus a hash of its full path, so
+-- two projects with the same folder name (e.g. two `demo`s) don't share one
+local workspace_name = vim.fn.fnamemodify(root_dir, ':t') .. '-' .. vim.fn.sha256(root_dir):sub(1, 8)
+local workspace_dir = vim.fn.stdpath 'data' .. '/jdtls-workspace/' .. workspace_name
 
 jdtls.start_or_attach {
   cmd = {
