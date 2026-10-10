@@ -25,6 +25,11 @@ return {
     end,
     formatters_by_ft = {
       lua = { 'stylua' },
+      sh = { 'shfmt' },
+      bash = { 'shfmt' },
+      go = { 'goimports', 'gofumpt' },
+      rust = { 'rustfmt' },
+      toml = { 'taplo' },
       javascript = prettier,
       javascriptreact = prettier,
       typescript = prettier,

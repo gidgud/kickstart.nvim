@@ -13,11 +13,52 @@ local servers = {
     -- The server crashes validating embedded CSS when no css.lint settings are sent
     settings = { css = { lint = { validProperties = {} } } },
   },
-  gopls = {},
+  gopls = {
+    settings = {
+      gopls = {
+        staticcheck = true,
+        hints = { parameterNames = true, assignVariableTypes = true, compositeLiteralFields = true },
+      },
+    },
+  },
+  rust_analyzer = {
+    settings = {
+      ['rust-analyzer'] = { check = { command = 'clippy' } }, -- clippy lints on save
+    },
+  },
+  bashls = {}, -- runs shellcheck
+  dockerls = {},
+  docker_compose_language_service = {}, -- attaches to the yaml.docker-compose filetype (see below)
+  taplo = {}, -- TOML (Cargo.toml, ...)
+  -- jsonls/yamlls get their schemas from SchemaStore in config() below
+  jsonls = {},
+  yamlls = {},
 }
 
 -- Non-LSP tools to keep installed through Mason
-local tools = { 'stylua', 'prettier', 'jdtls', 'java-debug-adapter', 'java-test' }
+local tools = {
+  'stylua',
+  'prettier',
+  'shfmt',
+  'goimports',
+  'gofumpt',
+  'hadolint', -- Dockerfile linter
+  'actionlint', -- GitHub Actions linter
+  'jdtls',
+  'java-debug-adapter',
+  'java-test',
+  'delve', -- Go debugger
+  'codelldb', -- Rust/C debugger
+}
+
+-- Compose files are plain yaml by default; give them a compound filetype so
+-- docker_compose_language_service attaches (yamlls, treesitter and prettier still apply)
+vim.filetype.add {
+  pattern = {
+    ['.*/docker%-compose[%w.-]*%.ya?ml'] = 'yaml.docker-compose',
+    ['.*/compose[%w.-]*%.ya?ml'] = 'yaml.docker-compose',
+  },
+}
 
 return {
   {
@@ -41,6 +82,7 @@ return {
       'WhoIsSethDaniel/mason-tool-installer.nvim',
       { 'j-hui/fidget.nvim', opts = {} }, -- LSP progress notifications
       'saghen/blink.cmp',
+      'b0o/SchemaStore.nvim', -- JSON/YAML schemas (package.json, GitHub Actions, compose, k8s, ...)
     },
     config = function()
       vim.api.nvim_create_autocmd('LspAttach', {
@@ -110,6 +152,15 @@ return {
           },
         } or {},
         virtual_text = { source = 'if_many', spacing = 2 },
+      }
+
+      local schemastore = require 'schemastore'
+      servers.jsonls.settings = { json = { schemas = schemastore.json.schemas(), validate = { enable = true } } }
+      servers.yamlls.settings = {
+        yaml = {
+          schemaStore = { enable = false, url = '' }, -- use SchemaStore.nvim's catalog instead of the built-in one
+          schemas = schemastore.yaml.schemas(),
+        },
       }
 
       local capabilities = require('blink.cmp').get_lsp_capabilities()
