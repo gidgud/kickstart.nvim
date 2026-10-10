@@ -1,135 +1,107 @@
-local home = os.getenv 'HOME'
-local workspace_path = home .. '/.local/share/nvim/jdtls-workspace/'
-local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
-local workspace_dir = workspace_path .. project_name
-local status, jdtls = pcall(require, 'jdtls')
-if not status then
+-- jdtls is started here (once per Java buffer) rather than through mason-lspconfig,
+-- because nvim-jdtls needs a per-project workspace and extended capabilities.
+local ok, jdtls = pcall(require, 'jdtls')
+if not ok then
   return
 end
--- Add nvim-cmp capabilities
-local capabilities = vim.lsp.protocol.make_client_capabilities()
-local cmp_status, cmp_nvim_lsp = pcall(require, 'cmp_nvim_lsp')
-if cmp_status then
-  capabilities = cmp_nvim_lsp.default_capabilities(capabilities)
+
+local jdtls_path = vim.fn.stdpath 'data' .. '/mason/packages/jdtls'
+local launcher = vim.fn.glob(jdtls_path .. '/plugins/org.eclipse.equinox.launcher_*.jar')
+if launcher == '' then
+  vim.notify('jdtls is not installed yet, run :MasonToolsInstall', vim.log.levels.WARN)
+  return
 end
-local extendedClientCapabilities = jdtls.extendedClientCapabilities
-local config = {
+
+-- jdtls itself needs Java 21+, even though projects may target older JDKs.
+-- Every sdkman JDK is registered as a project runtime; `current` is the default.
+local sdkman_java = vim.env.HOME .. '/.sdkman/candidates/java'
+local current_jdk = vim.uv.fs_realpath(sdkman_java .. '/current')
+local jdtls_java = vim.env.JDTLS_JAVA or 'java'
+local runtimes_by_name = {}
+for _, jdk in ipairs(vim.fn.glob(sdkman_java .. '/[0-9]*', true, true)) do
+  local major = tonumber(vim.fn.fnamemodify(jdk, ':t'):match '^(%d+)')
+  if major >= 21 and not vim.env.JDTLS_JAVA then
+    jdtls_java = jdk .. '/bin/java'
+  end
+  local name = 'JavaSE-' .. major
+  local is_current = vim.uv.fs_realpath(jdk) == current_jdk
+  -- one runtime per major version, preferring `current` over other patch releases
+  if not (runtimes_by_name[name] and runtimes_by_name[name].default) then
+    runtimes_by_name[name] = { name = name, path = jdk, default = is_current }
+  end
+end
+local runtimes = vim.tbl_values(runtimes_by_name)
+
+local root_dir = vim.fs.root(0, { '.git', 'mvnw', 'gradlew', 'pom.xml', 'build.gradle' }) or vim.fn.getcwd()
+local workspace_dir = vim.fn.stdpath 'data' .. '/jdtls-workspace/' .. vim.fn.fnamemodify(root_dir, ':t')
+
+jdtls.start_or_attach {
   cmd = {
-    'java',
+    jdtls_java,
     '-Declipse.application=org.eclipse.jdt.ls.core.id1',
     '-Dosgi.bundles.defaultStartLevel=4',
     '-Declipse.product=org.eclipse.jdt.ls.core.product',
-    '-Dlog.protocol=true',
-    '-Dlog.level=ALL',
     '-Xmx1g',
     '--add-modules=ALL-SYSTEM',
     '--add-opens',
     'java.base/java.util=ALL-UNNAMED',
     '--add-opens',
     'java.base/java.lang=ALL-UNNAMED',
-    '-javaagent:' .. home .. '/.local/share/nvim/mason/packages/jdtls/lombok.jar',
+    '-javaagent:' .. jdtls_path .. '/lombok.jar',
     '-jar',
-    vim.fn.glob(home .. '/.local/share/nvim/mason/packages/jdtls/plugins/org.eclipse.equinox.launcher_*.jar'),
+    launcher,
     '-configuration',
-    home .. '/.local/share/nvim/mason/packages/jdtls/config_linux',
+    jdtls_path .. '/config_linux',
     '-data',
     workspace_dir,
   },
-  root_dir = require('jdtls.setup').find_root { '.git', 'mvnw', 'gradlew', 'pom.xml', 'build.gradle' },
-  capabilities = capabilities,
+  root_dir = root_dir,
+  capabilities = require('blink.cmp').get_lsp_capabilities(),
   settings = {
     java = {
       signatureHelp = { enabled = true },
-      extendedClientCapabilities = extendedClientCapabilities,
-      maven = {
-        downloadSources = true,
-      },
-      referencesCodeLens = {
-        enabled = true,
-      },
-      references = {
-        includeDecompiledSources = true,
-      },
-      inlayHints = {
-        parameterNames = {
-          enabled = 'all',
-        },
-      },
-      format = {
-        enabled = false,
-      },
+      maven = { downloadSources = true },
+      referencesCodeLens = { enabled = true },
+      references = { includeDecompiledSources = true },
+      inlayHints = { parameterNames = { enabled = 'all' } },
+      format = { enabled = false },
+      configuration = { runtimes = runtimes },
     },
   },
   init_options = {
     bundles = {},
+    extendedClientCapabilities = jdtls.extendedClientCapabilities,
   },
 }
-require('jdtls').start_or_attach(config)
 
--- Existing keymaps
-vim.keymap.set('n', '<leader>co', "<Cmd>lua require'jdtls'.organize_imports()<CR>", { desc = 'Organize Imports' })
-vim.keymap.set('n', '<leader>crv', "<Cmd>lua require('jdtls').extract_variable()<CR>", { desc = 'Extract Variable' })
-vim.keymap.set('v', '<leader>crv', "<Esc><Cmd>lua require('jdtls').extract_variable(true)<CR>", { desc = 'Extract Variable' })
-vim.keymap.set('n', '<leader>crc', "<Cmd>lua require('jdtls').extract_constant()<CR>", { desc = 'Extract Constant' })
-vim.keymap.set('v', '<leader>crc', "<Esc><Cmd>lua require('jdtls').extract_constant(true)<CR>", { desc = 'Extract Constant' })
-vim.keymap.set('v', '<leader>crm', "<Esc><Cmd>lua require('jdtls').extract_method(true)<CR>", { desc = 'Extract Method' })
+local function map(mode, lhs, rhs, desc)
+  vim.keymap.set(mode, lhs, rhs, { buffer = true, desc = desc })
+end
 
--- NEW: Generator keymaps for constructors, getters, and setters
--- This opens the selection dialog instead of auto-applying
-vim.keymap.set('n', '<leader>cgs', function()
-  require('jdtls').organize_imports()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate Getters and Setters')
-    end,
-    apply = false, -- Changed to false to show picker
-  }
-end, { desc = 'Generate Getters and Setters' })
+-- Opens the code action picker filtered to actions whose title matches `title`
+local function code_action(title)
+  return function()
+    vim.lsp.buf.code_action {
+      filter = function(action)
+        return action.title:match(title) ~= nil
+      end,
+    }
+  end
+end
 
-vim.keymap.set('n', '<leader>cgg', function()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate Getter')
-    end,
-    apply = false,
-  }
-end, { desc = 'Generate Getter' })
+map('n', '<leader>co', jdtls.organize_imports, 'Organize Imports')
+map('n', '<leader>crv', jdtls.extract_variable, 'Extract Variable')
+map('v', '<leader>crv', '<Esc><Cmd>lua require("jdtls").extract_variable(true)<CR>', 'Extract Variable')
+map('n', '<leader>crc', jdtls.extract_constant, 'Extract Constant')
+map('v', '<leader>crc', '<Esc><Cmd>lua require("jdtls").extract_constant(true)<CR>', 'Extract Constant')
+map('v', '<leader>crm', '<Esc><Cmd>lua require("jdtls").extract_method(true)<CR>', 'Extract Method')
 
-vim.keymap.set('n', '<leader>cgS', function()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate Setter')
-    end,
-    apply = false,
-  }
-end, { desc = 'Generate Setter' })
-
-vim.keymap.set('n', '<leader>cgc', function()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate Constructor')
-    end,
-    apply = false,
-  }
-end, { desc = 'Generate Constructor' })
-
-vim.keymap.set('n', '<leader>cgt', function()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate toString')
-    end,
-    apply = false,
-  }
-end, { desc = 'Generate toString()' })
-
-vim.keymap.set('n', '<leader>cgh', function()
-  vim.lsp.buf.code_action {
-    filter = function(action)
-      return string.match(action.title, 'Generate hashCode')
-    end,
-    apply = false,
-  }
-end, { desc = 'Generate hashCode() and equals()' })
-
--- Alternative: Use general code action picker for all options
-vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, { desc = 'Code Actions' })
+map('n', '<leader>cgs', function()
+  jdtls.organize_imports()
+  code_action 'Generate Getters and Setters'()
+end, 'Generate Getters and Setters')
+map('n', '<leader>cgg', code_action 'Generate Getter', 'Generate Getter')
+map('n', '<leader>cgS', code_action 'Generate Setter', 'Generate Setter')
+map('n', '<leader>cgc', code_action 'Generate Constructor', 'Generate Constructor')
+map('n', '<leader>cgt', code_action 'Generate toString', 'Generate toString()')
+map('n', '<leader>cgh', code_action 'Generate hashCode', 'Generate hashCode() and equals()')
