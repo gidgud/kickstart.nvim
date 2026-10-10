@@ -17,7 +17,7 @@ local servers = {
 }
 
 -- Non-LSP tools to keep installed through Mason
-local tools = { 'stylua', 'prettier', 'jdtls' }
+local tools = { 'stylua', 'prettier', 'jdtls', 'java-debug-adapter', 'java-test' }
 
 return {
   {
