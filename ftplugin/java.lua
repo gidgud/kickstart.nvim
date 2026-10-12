@@ -13,25 +13,9 @@ if launcher == '' then
   return
 end
 
--- jdtls itself needs Java 21+, even though projects may target older JDKs.
--- Every sdkman JDK is registered as a project runtime; `current` is the default.
-local sdkman_java = vim.env.HOME .. '/.sdkman/candidates/java'
-local current_jdk = vim.uv.fs_realpath(sdkman_java .. '/current')
+-- jdtls itself needs Java 21+; the system `java` (archlinux-java default) is used unless
+-- $JDTLS_JAVA points at another one. Projects build against that same JDK.
 local jdtls_java = vim.env.JDTLS_JAVA or 'java'
-local runtimes_by_name = {}
-for _, jdk in ipairs(vim.fn.glob(sdkman_java .. '/[0-9]*', true, true)) do
-  local major = tonumber(vim.fn.fnamemodify(jdk, ':t'):match '^(%d+)')
-  if major >= 21 and not vim.env.JDTLS_JAVA then
-    jdtls_java = jdk .. '/bin/java'
-  end
-  local name = 'JavaSE-' .. major
-  local is_current = vim.uv.fs_realpath(jdk) == current_jdk
-  -- one runtime per major version, preferring `current` over other patch releases
-  if not (runtimes_by_name[name] and runtimes_by_name[name].default) then
-    runtimes_by_name[name] = { name = name, path = jdk, default = is_current }
-  end
-end
-local runtimes = vim.tbl_values(runtimes_by_name)
 
 -- java-debug and java-test (installed by Mason) are loaded into jdtls as plugins
 local bundles = vim.fn.glob(mason_packages .. '/java-debug-adapter/extension/server/com.microsoft.java.debug.plugin-*.jar', true, true)
@@ -81,7 +65,6 @@ jdtls.start_or_attach {
       references = { includeDecompiledSources = true },
       inlayHints = { parameterNames = { enabled = 'all' } },
       format = { enabled = false },
-      configuration = { runtimes = runtimes },
     },
   },
   init_options = {
