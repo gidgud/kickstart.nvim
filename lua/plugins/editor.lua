@@ -82,6 +82,7 @@ return {
       delay = 0,
       icons = { mappings = vim.g.have_nerd_font },
       spec = {
+        { '<leader>a', group = '[A]I (Claude)', mode = { 'n', 'v' } },
         { '<leader>c', group = '[C]ode' },
         { '<leader>cg', group = '[G]enerate' },
         { '<leader>cr', group = '[R]efactor' },
